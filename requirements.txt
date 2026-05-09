@@ -1,0 +1,19 @@
+# Web
+fastapi>=0.115
+uvicorn[standard]>=0.32
+
+# Telegram
+python-telegram-bot[ext]>=21.0
+
+# Claude API
+anthropic>=0.40
+
+# Google
+gspread>=6.0
+google-auth>=2.35
+google-api-python-client>=2.150
+google-cloud-secret-manager>=2.20
+google-cloud-firestore>=2.19
+
+# Data
+pydantic>=2.9
