@@ -17,3 +17,4 @@ google-cloud-firestore>=2.19
 
 # Data
 pydantic>=2.9
+python-dotenv>=1.0

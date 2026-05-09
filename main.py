@@ -1,5 +1,8 @@
 """FastAPI entry point — FopAI backend on Google Cloud Run."""
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import logging
 import os
 from contextlib import asynccontextmanager
