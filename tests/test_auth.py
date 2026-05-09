@@ -47,6 +47,24 @@ def test_not_registered_raises(mock_get):
 
 
 # ---------------------------------------------------------------------------
+# Pending / rejected
+# ---------------------------------------------------------------------------
+
+@patch("middleware.auth.get_user_record", return_value=_record(role="pending"))
+def test_pending_raises(mock_get):
+    with pytest.raises(AccessDenied) as exc:
+        check_access(111)
+    assert str(exc.value) == "pending"
+
+
+@patch("middleware.auth.get_user_record", return_value=_record(role="rejected"))
+def test_rejected_raises(mock_get):
+    with pytest.raises(AccessDenied) as exc:
+        check_access(111)
+    assert str(exc.value) == "rejected"
+
+
+# ---------------------------------------------------------------------------
 # Whitelist roles
 # ---------------------------------------------------------------------------
 

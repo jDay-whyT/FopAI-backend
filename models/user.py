@@ -17,7 +17,7 @@ class FopProfile(BaseModel):
 
 class User(BaseModel):
     telegram_id: int
-    role: Literal["admin", "tester", "subscriber", "free"] = "free"
+    role: Literal["admin", "tester", "subscriber", "free", "pending", "rejected"] = "pending"
     subscription_status: Literal["active", "expired", "free"] = "free"
     expires_at: str | None = None          # ISO datetime string, UTC
     requests_used: int = 0

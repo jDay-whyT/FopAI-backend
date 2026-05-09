@@ -24,6 +24,12 @@ def check_access(telegram_id: int) -> bool:
     if role in ("admin", "tester"):
         return True
 
+    if role == "pending":
+        raise AccessDenied("pending")
+
+    if role == "rejected":
+        raise AccessDenied("rejected")
+
     if role == "subscriber":
         expires_at = user.get("expires_at")
         if expires_at and _parse_dt(expires_at) > datetime.now(timezone.utc):
