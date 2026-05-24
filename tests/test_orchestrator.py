@@ -4,8 +4,42 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agents.orchestrator import _detect_intent, _select_model, handle_message
+from agents.orchestrator import _detect_agent, _detect_intent, _select_model, handle_message
 from middleware.rate_limiter import TokenLimitExceeded
+
+
+# ---------------------------------------------------------------------------
+# Agent detection
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("text,expected", [
+    # accounting — explicit record verb + financial object
+    ("запиши дохід 50000", "accounting"),
+    ("внеси витрати за оренду", "accounting"),
+    ("зафіксуй надходження від клієнта", "accounting"),
+    # accounting NOT triggered — no record verb
+    ("скільки в мене доходу за квартал", "consultant"),
+    ("який ліміт доходу для 3 групи", "consultant"),
+    # documents — verb + type
+    ("склади акт виконаних робіт", "documents"),
+    ("зроби рахунок для клієнта", "documents"),
+    ("напиши пояснення для банку", "documents"),
+    # documents NOT triggered — verb without type
+    ("склади план дій при перевірці", "consultant"),
+    # analytics
+    ("проаналізуй мої витрати", "analytics"),
+    ("звіт за квартал по доходах", "analytics"),
+    ("скільки заробив за місяць", "analytics"),
+    # reminders
+    ("нагадай мені сплатити єсв", "reminders"),
+    ("постав нагадування на 20 число", "reminders"),
+    # consultant default
+    ("що таке фоп", "consultant"),
+    ("який ліміт третьої групи", "consultant"),
+    ("мені прийшов штраф від дпс", "consultant"),
+])
+def test_agent_detection(text, expected):
+    assert _detect_agent(text) == expected
 
 
 # ---------------------------------------------------------------------------

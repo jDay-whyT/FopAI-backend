@@ -31,6 +31,18 @@ _CRITICAL = {
     "санкція", "порушення", "ухилення від податків",
 }
 
+# Agent routing — imperative recording verbs required for accounting
+# to avoid false positives on questions that mention the same objects.
+_RECORD_VERBS = ("запиши", "внеси", "зафіксуй")
+_ACCOUNT_OBJECTS = ("дохід", "доходу", "витрат", "надходжен", "виплат")
+_DOC_VERBS = ("склади", "створи", "зроби", "сформуй", "підготуй", "напиши")
+_DOC_TYPES = ("акт", "рахунок", "інвойс", "накладн", "договір", "лист до банку", "пояснення для банку")
+_ANALYTICS_KW = (
+    "проаналізуй", "перевір виписк", "звіт за", "статистик",
+    "підсумок за", "скільки заробив за", "скільки витратив за",
+)
+_REMINDER_KW = ("нагадай мені", "постав нагадування", "нагадування на")
+
 _client: anthropic.AsyncAnthropic | None = None
 
 
@@ -39,6 +51,19 @@ def _get_client() -> anthropic.AsyncAnthropic:
     if _client is None:
         _client = anthropic.AsyncAnthropic()
     return _client
+
+
+def _detect_agent(text: str) -> str:
+    lower = text.lower()
+    if any(kw in lower for kw in _REMINDER_KW):
+        return "reminders"
+    if any(v in lower for v in _DOC_VERBS) and any(t in lower for t in _DOC_TYPES):
+        return "documents"
+    if any(kw in lower for kw in _ANALYTICS_KW):
+        return "analytics"
+    if any(v in lower for v in _RECORD_VERBS) and any(o in lower for o in _ACCOUNT_OBJECTS):
+        return "accounting"
+    return "consultant"
 
 
 def _detect_intent(text: str) -> str:
@@ -73,18 +98,20 @@ async def handle_message(
 
     intent = _detect_intent(text)
     model = _select_model(intent)
+    agent = _detect_agent(text)
     ep_group = str(user.fop_profile.ep_group) if user and user.fop_profile else None
 
-    # Tier 2: Response cache — simple queries only
-    if intent == "simple":
+    # Tier 2: Response cache — simple consultant queries only
+    if intent == "simple" and agent == "consultant":
         cached = response_cache.get(text, ep_group)
         if cached is not None:
             log.info("cache.hit user=%s", user.telegram_id if user else None)
             return cached
 
-    log.info("intent=%s model=%s user=%s", intent, model, user.telegram_id if user else None)
+    log.info("intent=%s agent=%s model=%s user=%s", intent, agent, model, user.telegram_id if user else None)
+    if agent != "consultant":
+        log.warning("agent=%s not implemented, routing to consultant", agent)
 
-    # V2: route to accounting / documents / analytics based on intent
     reply = await consultant.handle(text, history=history, user=user, model=model)
 
     if intent == "simple":
