@@ -2,12 +2,12 @@
 
 import json
 import logging
-import os
 from typing import Any
 
-from google.cloud import secretmanager
 from google.oauth2.service_account import Credentials
 import gspread
+
+from connectors.secrets import get_secret
 
 log = logging.getLogger(__name__)
 
@@ -29,20 +29,10 @@ _users_worksheet: gspread.Worksheet | None = None
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _secret(name: str) -> str:
-    client = secretmanager.SecretManagerServiceClient()
-    response = client.access_secret_version(request={"name": name})
-    return response.payload.data.decode("utf-8")
-
-
-def _project() -> str:
-    return os.environ["GCP_PROJECT_ID"]
-
-
 def _gc() -> gspread.Client:
     global _gc_client
     if _gc_client is None:
-        sa_json = _secret(f"projects/{_project()}/secrets/google-service-account/versions/latest")
+        sa_json = get_secret("google-service-account")
         creds = Credentials.from_service_account_info(json.loads(sa_json), scopes=_SCOPES)
         _gc_client = gspread.Client(auth=creds)
     return _gc_client
@@ -51,7 +41,7 @@ def _gc() -> gspread.Client:
 def _users_ws() -> gspread.Worksheet:
     global _users_worksheet
     if _users_worksheet is None:
-        sheet_id = _secret(f"projects/{_project()}/secrets/users-sheet-id/versions/latest")
+        sheet_id = get_secret("users-sheet-id")
         _users_worksheet = _gc().open_by_key(sheet_id).sheet1
     return _users_worksheet
 

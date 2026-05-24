@@ -175,6 +175,12 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
+
+    admin_tid = os.environ.get("ADMIN_TELEGRAM_ID")
+    if not admin_tid or str(query.from_user.id) != admin_tid:
+        await query.answer("Not authorized.", show_alert=True)
+        return
+
     await query.answer()
 
     action, tid_str = query.data.split("_", 1)
@@ -216,7 +222,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     text = update.message.text
 
     try:
-        check_access(tid)
+        record = check_access(tid)
     except AccessDenied as e:
         code = str(e)
         if code == "not_registered":
@@ -244,8 +250,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         return
 
     history = get_context(tid)
-    record = get_user_record(tid)
-    user = User.from_record(record) if record else None
+    user = User.from_record(record)
 
     await context.bot.send_chat_action(
         chat_id=update.effective_chat.id, action="typing"

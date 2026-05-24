@@ -71,14 +71,14 @@ def test_rejected_raises(mock_get):
 @patch("middleware.auth.update_user_record")
 @patch("middleware.auth.get_user_record", return_value=_record(role="admin"))
 def test_admin_always_passes(mock_get, mock_update):
-    assert check_access(111) is True
+    assert check_access(111) is not None
     mock_update.assert_not_called()
 
 
 @patch("middleware.auth.update_user_record")
 @patch("middleware.auth.get_user_record", return_value=_record(role="tester"))
 def test_tester_always_passes(mock_get, mock_update):
-    assert check_access(111) is True
+    assert check_access(111) is not None
     mock_update.assert_not_called()
 
 
@@ -92,7 +92,7 @@ def test_active_subscriber_passes(mock_get, mock_update):
     mock_get.return_value = _record(
         role="subscriber", sub_status="active", expires_at=_future(30)
     )
-    assert check_access(111) is True
+    assert check_access(111) is not None
     mock_update.assert_not_called()
 
 
@@ -106,7 +106,7 @@ def test_expired_subscriber_downgrades_and_uses_free_counter(mock_get, mock_upda
     mock_get.return_value = _record(
         role="subscriber", sub_status="active", expires_at=_past(1), requests_used=0
     )
-    assert check_access(111) is True
+    assert check_access(111) is not None
     # First call: downgrade write
     assert mock_update.call_count == 2
     first_call_updates = mock_update.call_args_list[0][0][1]
@@ -125,7 +125,7 @@ def test_expired_subscriber_downgrades_and_uses_free_counter(mock_get, mock_upda
 @patch("middleware.auth.get_user_record")
 def test_free_tier_with_requests_remaining(mock_get, mock_update):
     mock_get.return_value = _record(requests_used=5)
-    assert check_access(111) is True
+    assert check_access(111) is not None
     mock_update.assert_called_once_with(111, {"requests_used": 6})
 
 
@@ -143,5 +143,5 @@ def test_free_tier_exhausted_raises(mock_get, mock_update):
 @patch("middleware.auth.get_user_record")
 def test_free_tier_last_request_passes(mock_get, mock_update):
     mock_get.return_value = _record(requests_used=9)
-    assert check_access(111) is True
+    assert check_access(111) is not None
     mock_update.assert_called_once_with(111, {"requests_used": 10})

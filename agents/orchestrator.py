@@ -62,7 +62,7 @@ async def handle_message(
     history: list[Message],
     user: User | None,
 ) -> str:
-    check_token_limit(len(text) // 3)
+    check_token_limit(len(text) // 2)
 
     intent = _detect_intent(text)
     model = _select_model(intent)

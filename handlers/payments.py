@@ -4,12 +4,11 @@ import base64
 import hashlib
 import json
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Form, HTTPException, status
-from google.cloud import secretmanager
+from fastapi import APIRouter, Form, status
 
+from connectors.secrets import get_secret
 from connectors.google_sheets import get_user_record, update_user_record
 
 log = logging.getLogger(__name__)
@@ -27,16 +26,7 @@ def _keys() -> tuple[str, str]:
     """Return (public_key, private_key), fetched once from Secret Manager."""
     global _liqpay_keys
     if _liqpay_keys is None:
-        project = os.environ["GCP_PROJECT_ID"]
-        sm = secretmanager.SecretManagerServiceClient()
-
-        def _secret(name: str) -> str:
-            resp = sm.access_secret_version(
-                request={"name": f"projects/{project}/secrets/{name}/versions/latest"}
-            )
-            return resp.payload.data.decode("utf-8")
-
-        _liqpay_keys = (_secret("liqpay-public-key"), _secret("liqpay-private-key"))
+        _liqpay_keys = (get_secret("liqpay-public-key"), get_secret("liqpay-private-key"))
     return _liqpay_keys
 
 
@@ -102,9 +92,8 @@ async def liqpay_webhook(
     _, private_key = _keys()
 
     if not _verify(data, signature, private_key):
-        # Log the attempt but don't reveal detail to caller
         log.warning("liqpay_webhook: invalid signature")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bad signature")
+        return {"status": "rejected"}
 
     payload = json.loads(base64.b64decode(data).decode("utf-8"))
     order_id: str = payload.get("order_id", "")

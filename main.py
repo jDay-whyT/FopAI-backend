@@ -11,9 +11,8 @@ from fastapi import FastAPI, Request, Response, status
 from telegram import Update
 from telegram.ext import Application
 
-from google.cloud import secretmanager
-
-from handlers.telegram import build_application, router as telegram_router
+from connectors.secrets import get_secret
+from handlers.telegram import build_application
 from handlers.payments import router as payments_router
 from handlers.scheduler import router as scheduler_router
 
@@ -26,21 +25,13 @@ log = logging.getLogger(__name__)
 _ptb_app: Application | None = None
 
 
-def _secret(name: str) -> str:
-    project = os.environ["GCP_PROJECT_ID"]
-    client = secretmanager.SecretManagerServiceClient()
-    resp = client.access_secret_version(
-        request={"name": f"projects/{project}/secrets/{name}/versions/latest"}
-    )
-    return resp.payload.data.decode("utf-8")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _ptb_app
 
-    token = _secret("telegram-bot-token")
+    token = get_secret("telegram-bot-token")
     webhook_url = os.environ["WEBHOOK_URL"].rstrip("/") + "/webhook/telegram"
+    webhook_secret = os.environ.get("TELEGRAM_WEBHOOK_SECRET") or None
 
     _ptb_app = build_application(token)
     await _ptb_app.initialize()
@@ -48,6 +39,7 @@ async def lifespan(app: FastAPI):
         url=webhook_url,
         allowed_updates=Update.ALL_TYPES,
         drop_pending_updates=True,
+        secret_token=webhook_secret,
     )
     log.info("Telegram webhook set: %s", webhook_url)
 
@@ -59,7 +51,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="FopAI", lifespan=lifespan)
 
-app.include_router(telegram_router, prefix="/webhook")
 app.include_router(payments_router, prefix="/webhook")
 app.include_router(scheduler_router, prefix="/cron")
 
@@ -73,6 +64,9 @@ async def health() -> dict:
 async def telegram_webhook(request: Request) -> Response:
     if _ptb_app is None:
         return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+    expected = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
+    if expected and request.headers.get("X-Telegram-Bot-Api-Secret-Token", "") != expected:
+        return Response(status_code=status.HTTP_401_UNAUTHORIZED)
     data = await request.json()
     update = Update.de_json(data, _ptb_app.bot)
     await _ptb_app.process_update(update)

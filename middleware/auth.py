@@ -1,4 +1,6 @@
 from datetime import datetime, timezone
+from typing import Any
+
 from connectors.google_sheets import get_user_record, update_user_record
 
 
@@ -9,10 +11,10 @@ class AccessDenied(Exception):
     pass
 
 
-def check_access(telegram_id: int) -> bool:
+def check_access(telegram_id: int) -> dict[str, Any]:
     """
-    Returns True if user can proceed.
-    Raises AccessDenied with a user-facing message if not.
+    Returns the user record if access is granted.
+    Raises AccessDenied with a reason code if not.
     """
     user = get_user_record(telegram_id)
 
@@ -22,7 +24,7 @@ def check_access(telegram_id: int) -> bool:
     role = user.get("role", "free")
 
     if role in ("admin", "tester"):
-        return True
+        return user
 
     if role == "pending":
         raise AccessDenied("pending")
@@ -33,18 +35,20 @@ def check_access(telegram_id: int) -> bool:
     if role == "subscriber":
         expires_at = user.get("expires_at")
         if expires_at and _parse_dt(expires_at) > datetime.now(timezone.utc):
-            return True
+            return user
         # Subscription expired — downgrade gracefully, don't block outright
         update_user_record(telegram_id, {"role": "free", "subscription_status": "expired"})
+        user["role"] = "free"
+        user["subscription_status"] = "expired"
 
     requests_used = int(user.get("requests_used", 0))
     if requests_used < FREE_TIER_LIMIT:
         update_user_record(telegram_id, {"requests_used": requests_used + 1})
-        return True
+        return user
 
     raise AccessDenied("limit_reached")
 
 
 def _parse_dt(value: str) -> datetime:
-    # ISO 8601, always UTC
-    return datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
+    dt = datetime.fromisoformat(value)
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
