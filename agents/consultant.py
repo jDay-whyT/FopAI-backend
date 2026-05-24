@@ -45,6 +45,10 @@ _SYSTEM = """\
 
 _client: anthropic.AsyncAnthropic | None = None
 
+_FINMON_KW = ("фінмон", "фінансовий моніторинг", "aml", "блокуван", "банк запит", "підозрілі операц", "пояснення для банку")
+_EP_KW = ("єсв", "єп", "ліміт", "єдиний податок", "військовий збір", "вз", "мінзарплат", "дохід", "доходу", "доходів", "ставк")
+_PKU_KW = ("прро", "рро", "фіскал", "квед", "реєстра", "первинн", "акт", "накладн", "договір")
+
 
 def _get_client() -> anthropic.AsyncAnthropic:
     global _client
@@ -60,18 +64,34 @@ def _load_skill(filename: str) -> str:
     return ""
 
 
-def _build_system(user: User | None) -> list[dict]:
-    pku = _load_skill("pku-rules.md")
-    ep = _load_skill("ep-groups.md")
-    finmon = _load_skill("nbu-finmon.md")
+def _select_skill_files(text: str) -> list[str]:
+    lower = text.lower()
+    files: list[str] = []
+    if any(kw in lower for kw in _FINMON_KW):
+        files.append("nbu-finmon.md")
+    if any(kw in lower for kw in _EP_KW):
+        files.append("ep-groups.md")
+    if any(kw in lower for kw in _PKU_KW) or not files:
+        files.append("pku-rules.md")
+    return files
+
+
+def _build_system(user: User | None, text: str = "") -> list[dict]:
+    skill_files = _select_skill_files(text)
 
     static = _SYSTEM
-    if pku:
-        static += f"\n\n---\n# Правила ПКУ (актуальна редакція)\n{pku}"
-    if ep:
-        static += f"\n\n---\n# Групи єдиного податку — ліміти та ставки\n{ep}"
-    if finmon:
-        static += f"\n\n---\n# Правила НБУ — фінансовий моніторинг\n{finmon}"
+    if "pku-rules.md" in skill_files:
+        pku = _load_skill("pku-rules.md")
+        if pku:
+            static += f"\n\n---\n# Правила ПКУ (актуальна редакція)\n{pku}"
+    if "ep-groups.md" in skill_files:
+        ep = _load_skill("ep-groups.md")
+        if ep:
+            static += f"\n\n---\n# Групи єдиного податку — ліміти та ставки\n{ep}"
+    if "nbu-finmon.md" in skill_files:
+        finmon = _load_skill("nbu-finmon.md")
+        if finmon:
+            static += f"\n\n---\n# Правила НБУ — фінансовий моніторинг\n{finmon}"
 
     blocks: list[dict] = [
         # Static block — cached across requests (same for all users)
@@ -106,7 +126,7 @@ async def handle(
     user: User | None,
     model: str,
 ) -> str:
-    system = _build_system(user)
+    system = _build_system(user, text)
     log.info("consultant.handle model=%s user=%s", model, user.telegram_id if user else None)
 
     response = await _get_client().messages.create(

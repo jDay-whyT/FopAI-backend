@@ -8,7 +8,6 @@ from agents.orchestrator import _detect_intent, _select_model, handle_message
 from middleware.rate_limiter import TokenLimitExceeded
 
 
-
 # ---------------------------------------------------------------------------
 # Intent detection
 # ---------------------------------------------------------------------------
@@ -47,13 +46,69 @@ def test_model_critical():
 
 
 # ---------------------------------------------------------------------------
+# FAQ tier — no Claude call
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+@patch("agents.orchestrator.check_token_limit")
+async def test_faq_hit_skips_consultant(mock_limit):
+    result = await handle_message("скільки єсв у 2026", history=[], user=None)
+    assert "1 902" in result
+
+
+@pytest.mark.asyncio
+@patch("agents.orchestrator.check_token_limit")
+async def test_faq_limit_group3(mock_limit):
+    result = await handle_message("який ліміт третьої групи", history=[], user=None)
+    assert "10 091" in result
+
+
+@pytest.mark.asyncio
+@patch("agents.orchestrator.check_token_limit")
+async def test_faq_vz(mock_limit):
+    result = await handle_message("скільки військовий збір для фоп", history=[], user=None)
+    assert "864" in result
+
+
+# ---------------------------------------------------------------------------
+# Cache tier
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+@patch("agents.orchestrator.response_cache.set")
+@patch("agents.orchestrator.response_cache.get", return_value="кешована відповідь")
+@patch("agents.orchestrator.faq.lookup", return_value=None)
+@patch("agents.orchestrator.consultant.handle", new_callable=AsyncMock)
+@patch("agents.orchestrator.check_token_limit")
+async def test_cache_hit_skips_consultant(mock_limit, mock_consultant, mock_faq, mock_cache_get, mock_cache_set):
+    result = await handle_message("що таке фоп", history=[], user=None)
+    assert result == "кешована відповідь"
+    mock_consultant.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@patch("agents.orchestrator.response_cache.set")
+@patch("agents.orchestrator.response_cache.get", return_value=None)
+@patch("agents.orchestrator.faq.lookup", return_value=None)
+@patch("agents.orchestrator.consultant.handle", new_callable=AsyncMock)
+@patch("agents.orchestrator.check_token_limit")
+async def test_simple_query_writes_cache(mock_limit, mock_consultant, mock_faq, mock_cache_get, mock_cache_set):
+    mock_consultant.return_value = "відповідь"
+    await handle_message("що таке фоп", history=[], user=None)
+    mock_cache_set.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # handle_message — delegation and token guard
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
+@patch("agents.orchestrator.response_cache.set")
+@patch("agents.orchestrator.response_cache.get", return_value=None)
+@patch("agents.orchestrator.faq.lookup", return_value=None)
 @patch("agents.orchestrator.consultant.handle", new_callable=AsyncMock)
 @patch("agents.orchestrator.check_token_limit")
-async def test_delegates_to_consultant(mock_limit, mock_consultant):
+async def test_delegates_to_consultant(mock_limit, mock_consultant, mock_faq, mock_cache_get, mock_cache_set):
     mock_consultant.return_value = "відповідь консультанта"
     result = await handle_message("що таке єсв", history=[], user=None)
     assert result == "відповідь консультанта"
@@ -61,19 +116,25 @@ async def test_delegates_to_consultant(mock_limit, mock_consultant):
 
 
 @pytest.mark.asyncio
+@patch("agents.orchestrator.response_cache.set")
+@patch("agents.orchestrator.response_cache.get", return_value=None)
+@patch("agents.orchestrator.faq.lookup", return_value=None)
 @patch("agents.orchestrator.consultant.handle", new_callable=AsyncMock)
 @patch("agents.orchestrator.check_token_limit")
-async def test_simple_query_uses_haiku(mock_limit, mock_consultant):
+async def test_simple_query_uses_haiku(mock_limit, mock_consultant, mock_faq, mock_cache_get, mock_cache_set):
     mock_consultant.return_value = "ok"
-    await handle_message("коли платити єсв", history=[], user=None)
+    await handle_message("що таке фоп", history=[], user=None)
     _, kwargs = mock_consultant.call_args
     assert kwargs["model"] == "claude-haiku-4-5-20251001"
 
 
 @pytest.mark.asyncio
+@patch("agents.orchestrator.response_cache.set")
+@patch("agents.orchestrator.response_cache.get", return_value=None)
+@patch("agents.orchestrator.faq.lookup", return_value=None)
 @patch("agents.orchestrator.consultant.handle", new_callable=AsyncMock)
 @patch("agents.orchestrator.check_token_limit")
-async def test_critical_query_uses_opus(mock_limit, mock_consultant):
+async def test_critical_query_uses_opus(mock_limit, mock_consultant, mock_faq, mock_cache_get, mock_cache_set):
     mock_consultant.return_value = "ok"
     await handle_message("заблокували рахунок що робити", history=[], user=None)
     _, kwargs = mock_consultant.call_args
@@ -88,9 +149,12 @@ async def test_token_limit_blocks_call(mock_limit):
 
 
 @pytest.mark.asyncio
+@patch("agents.orchestrator.response_cache.set")
+@patch("agents.orchestrator.response_cache.get", return_value=None)
+@patch("agents.orchestrator.faq.lookup", return_value=None)
 @patch("agents.orchestrator.consultant.handle", new_callable=AsyncMock)
 @patch("agents.orchestrator.check_token_limit")
-async def test_history_passed_to_consultant(mock_limit, mock_consultant):
+async def test_history_passed_to_consultant(mock_limit, mock_consultant, mock_faq, mock_cache_get, mock_cache_set):
     mock_consultant.return_value = "ok"
     history = [{"role": "user", "content": "привіт"}, {"role": "assistant", "content": "привіт"}]
     await handle_message("питання", history=history, user=None)

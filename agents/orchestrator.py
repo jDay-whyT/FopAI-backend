@@ -8,7 +8,8 @@ import logging
 
 import anthropic
 
-from agents import consultant
+from agents import consultant, faq
+from middleware import response_cache
 from middleware.context import Message
 from middleware.rate_limiter import check_token_limit
 from models.user import User
@@ -64,14 +65,32 @@ async def handle_message(
 ) -> str:
     check_token_limit(len(text) // 2)
 
+    # Tier 1: FAQ — zero API cost
+    answer = faq.lookup(text)
+    if answer is not None:
+        log.info("faq.hit user=%s", user.telegram_id if user else None)
+        return answer
+
     intent = _detect_intent(text)
     model = _select_model(intent)
+    ep_group = str(user.fop_profile.ep_group) if user and user.fop_profile else None
+
+    # Tier 2: Response cache — simple queries only
+    if intent == "simple":
+        cached = response_cache.get(text, ep_group)
+        if cached is not None:
+            log.info("cache.hit user=%s", user.telegram_id if user else None)
+            return cached
 
     log.info("intent=%s model=%s user=%s", intent, model, user.telegram_id if user else None)
 
-    # MVP: all queries → consultant
     # V2: route to accounting / documents / analytics based on intent
-    return await consultant.handle(text, history=history, user=user, model=model)
+    reply = await consultant.handle(text, history=history, user=user, model=model)
+
+    if intent == "simple":
+        response_cache.set(text, ep_group, reply)
+
+    return reply
 
 
 async def summarize_context(history: list[Message]) -> str:
