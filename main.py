@@ -7,7 +7,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, Response, status
+from fastapi import BackgroundTasks, FastAPI, Request, Response, status
 from telegram import Update
 from telegram.ext import Application
 
@@ -60,14 +60,20 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
+async def _process_update(data: dict) -> None:
+    if _ptb_app is None:
+        return
+    update = Update.de_json(data, _ptb_app.bot)
+    await _ptb_app.process_update(update)
+
+
 @app.post("/webhook/telegram", status_code=status.HTTP_200_OK)
-async def telegram_webhook(request: Request) -> Response:
+async def telegram_webhook(request: Request, background_tasks: BackgroundTasks) -> Response:
     if _ptb_app is None:
         return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
     expected = os.environ.get("TELEGRAM_WEBHOOK_SECRET", "")
     if expected and request.headers.get("X-Telegram-Bot-Api-Secret-Token", "") != expected:
         return Response(status_code=status.HTTP_401_UNAUTHORIZED)
     data = await request.json()
-    update = Update.de_json(data, _ptb_app.bot)
-    await _ptb_app.process_update(update)
+    background_tasks.add_task(_process_update, data)
     return Response()
