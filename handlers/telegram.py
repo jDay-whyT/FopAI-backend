@@ -1,5 +1,6 @@
 """Telegram webhook handlers — /start, /status, /reset, text → Claude."""
 
+import asyncio
 import logging
 import os
 
@@ -42,6 +43,19 @@ _WELCOME = (
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+async def _keep_typing(bot, chat_id: int) -> None:
+    try:
+        while True:
+            await bot.send_chat_action(chat_id=chat_id, action="typing")
+            await asyncio.sleep(4)
+    except asyncio.CancelledError:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Admin helpers
 # ---------------------------------------------------------------------------
 
@@ -73,10 +87,10 @@ async def _notify_admin(
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     tid = update.effective_user.id
-    record = get_user_record(tid)
+    record = await asyncio.to_thread(get_user_record, tid)
 
     if record is None:
-        create_user_record(tid, {
+        await asyncio.to_thread(create_user_record, tid, {
             "role": "pending",
             "subscription_status": "free",
             "requests_used": 0,
@@ -116,7 +130,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     tid = update.effective_user.id
-    record = get_user_record(tid)
+    record = await asyncio.to_thread(get_user_record, tid)
 
     if record is None:
         await update.message.reply_text("Ви ще не зареєстровані. Введіть /start.")
@@ -144,7 +158,7 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
 async def cmd_subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     tid = update.effective_user.id
-    record = get_user_record(tid)
+    record = await asyncio.to_thread(get_user_record, tid)
 
     if record is None:
         await update.message.reply_text("Спочатку введіть /start.")
@@ -188,7 +202,7 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     admin_name = query.from_user.first_name or "Admin"
 
     if action == "approve":
-        update_user_record(tid, {"role": "free"})
+        await asyncio.to_thread(update_user_record, tid, {"role": "free"})
         try:
             await context.bot.send_message(
                 chat_id=tid,
@@ -202,7 +216,7 @@ async def handle_approval(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await query.edit_message_text(f"✅ Approved by {admin_name} (user {tid})")
 
     elif action == "reject":
-        update_user_record(tid, {"role": "rejected"})
+        await asyncio.to_thread(update_user_record, tid, {"role": "rejected"})
         try:
             await context.bot.send_message(
                 chat_id=tid,
@@ -222,7 +236,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     text = update.message.text
 
     try:
-        record = check_access(tid)
+        record = await asyncio.to_thread(check_access, tid)
     except AccessDenied as e:
         code = str(e)
         if code == "not_registered":
@@ -252,10 +266,9 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     history = get_context(tid)
     user = User.from_record(record)
 
-    await context.bot.send_chat_action(
-        chat_id=update.effective_chat.id, action="typing"
+    typing_task = asyncio.create_task(
+        _keep_typing(context.bot, update.effective_chat.id)
     )
-
     try:
         reply = await handle_message(text, history=history, user=user)
     except Exception:
@@ -264,6 +277,9 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             "Сталася помилка. Спробуйте ще раз або напишіть пізніше."
         )
         return
+    finally:
+        typing_task.cancel()
+        await typing_task
 
     await update.message.reply_text(reply)
 
