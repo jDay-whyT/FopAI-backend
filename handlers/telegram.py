@@ -183,6 +183,19 @@ async def cmd_reset(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Контекст розмови очищено.")
 
 
+async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text(
+        "FopAI — бухгалтер для ФОП у Telegram.\n\n"
+        "Команди:\n"
+        "/start — реєстрація або привітання\n"
+        "/status — ваш тариф і ліміти\n"
+        "/subscribe — оформити підписку\n"
+        "/reset — очистити контекст розмови\n"
+        "/help — ця довідка\n\n"
+        "Просто пишіть запитання — відповім по ПКУ, ЄСВ, фінмоніторингу."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Admin approval callback
 # ---------------------------------------------------------------------------
@@ -287,7 +300,10 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     needs_summary = add_message(tid, "assistant", reply)
     if needs_summary:
         try:
-            full_history = get_context(tid)
+            full_history = history + [
+                {"role": "user", "content": text},
+                {"role": "assistant", "content": reply},
+            ]
             summary = await summarize_context(full_history)
             set_summary(tid, summary)
         except Exception:
@@ -312,6 +328,7 @@ def build_application(token: str) -> Application:
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("subscribe", cmd_subscribe))
     app.add_handler(CommandHandler("reset", cmd_reset))
+    app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CallbackQueryHandler(handle_approval, pattern=r"^(approve|reject)_\d+$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
     app.add_error_handler(on_error)
